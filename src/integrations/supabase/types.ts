@@ -16,6 +16,7 @@ export type Database = {
     Tables: {
       documents: {
         Row: {
+          attachments: Json | null
           created_at: string
           document_type: string
           form_data: Json
@@ -27,6 +28,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          attachments?: Json | null
           created_at?: string
           document_type: string
           form_data?: Json
@@ -38,6 +40,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          attachments?: Json | null
           created_at?: string
           document_type?: string
           form_data?: Json

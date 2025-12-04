@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,16 +9,24 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FormHeader } from "@/components/forms/FormHeader";
 import { FormFooter } from "@/components/forms/FormFooter";
 import { FormField } from "@/components/forms/FormField";
+import { FileAttachments } from "@/components/forms/FileAttachments";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { CalendarIcon, Printer, Download, Eye, Save, Plus, Trash2 } from "lucide-react";
+import { CalendarIcon, Download, Eye, Save, Plus, Trash2, Loader2 } from "lucide-react";
 import { format } from "date-fns";
-import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { exportToPdf } from "@/lib/pdfExport";
+
+interface Attachment {
+  name: string;
+  url: string;
+  type: string;
+  size: number;
+}
 
 interface LineItem {
   id: string;
@@ -44,6 +53,10 @@ interface MoneyFormData {
 }
 
 export default function MoneyRequisition() {
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const editId = searchParams.get("edit");
+
   const [formData, setFormData] = useState<MoneyFormData>({
     name: "",
     designation: "",
@@ -61,15 +74,21 @@ export default function MoneyRequisition() {
     otherEmployeeId: "",
   });
 
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [saving, setSaving] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [documentId, setDocumentId] = useState<string | null>(editId);
 
   useEffect(() => {
     loadUserProfile();
-  }, []);
+    if (editId) {
+      loadDocument(editId);
+    }
+  }, [editId]);
 
   const loadUserProfile = async () => {
     const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
+    if (user && !editId) {
       const { data: profile } = await (supabase
         .from("profiles" as any)
         .select("*")
@@ -85,6 +104,29 @@ export default function MoneyRequisition() {
           employeeId: profile.employee_id || "",
         }));
       }
+    }
+  };
+
+  const loadDocument = async (id: string) => {
+    const { data, error } = await (supabase
+      .from("documents" as any)
+      .select("*")
+      .eq("id", id)
+      .maybeSingle() as any);
+
+    if (error) {
+      toast({ title: "Error loading document", description: error.message, variant: "destructive" });
+      return;
+    }
+
+    if (data) {
+      const formDataFromDb = data.form_data;
+      setFormData({
+        ...formDataFromDb,
+        date: formDataFromDb.date ? new Date(formDataFromDb.date) : new Date(),
+      });
+      setAttachments(data.attachments || []);
+      setDocumentId(data.id);
     }
   };
 
@@ -142,40 +184,47 @@ export default function MoneyRequisition() {
     const { data: { user } } = await supabase.auth.getUser();
     
     if (!user) {
-      toast({
-        title: "Error",
-        description: "You must be logged in to save documents",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: "You must be logged in to save documents", variant: "destructive" });
       setSaving(false);
       return;
     }
 
-    const { error } = await (supabase.from("documents" as any).insert({
+    const docData = {
       user_id: user.id,
       document_type: "money_requisition",
       title: `Money Requisition - ${formData.projectName || "Untitled"}`,
       form_data: formData,
       status: "draft",
-    }) as any);
+      attachments: attachments,
+    };
+
+    let result;
+    if (documentId) {
+      result = await (supabase.from("documents" as any).update(docData).eq("id", documentId) as any);
+    } else {
+      result = await (supabase.from("documents" as any).insert(docData).select() as any);
+      if (result.data && result.data[0]) {
+        setDocumentId(result.data[0].id);
+      }
+    }
 
     setSaving(false);
-    if (error) {
-      toast({
-        title: "Error saving document",
-        description: error.message,
-        variant: "destructive",
-      });
+    if (result.error) {
+      toast({ title: "Error saving document", description: result.error.message, variant: "destructive" });
     } else {
-      toast({
-        title: "Document saved!",
-        description: "Your money requisition has been saved as draft.",
-      });
+      toast({ title: "Document saved!", description: documentId ? "Your changes have been saved." : "Your money requisition has been saved as draft." });
     }
   };
 
-  const handlePrint = () => {
-    window.print();
+  const handleExportPdf = async () => {
+    setExporting(true);
+    try {
+      await exportToPdf("printable-document", `Money_Requisition_${formData.projectName || "Document"}`);
+      toast({ title: "PDF exported!", description: "Your document has been downloaded as PDF." });
+    } catch (error) {
+      toast({ title: "Export failed", description: "Failed to export PDF. Please try again.", variant: "destructive" });
+    }
+    setExporting(false);
   };
 
   const displayName = formData.fillForAnother ? formData.otherName : formData.name;
@@ -190,11 +239,7 @@ export default function MoneyRequisition() {
       <div className="p-6 space-y-4">
         <div className="grid grid-cols-2 gap-4">
           <FormField label="Name" value={displayName} inline />
-          <FormField 
-            label="Date" 
-            value={formData.date ? format(formData.date, "dd/MM/yyyy") : ""} 
-            inline 
-          />
+          <FormField label="Date" value={formData.date ? format(formData.date, "dd/MM/yyyy") : ""} inline />
         </div>
         <div className="grid grid-cols-2 gap-4">
           <FormField label="Designation" value={displayDesignation} inline />
@@ -205,87 +250,79 @@ export default function MoneyRequisition() {
           <FormField label="Project Name" value={formData.projectName} inline />
         </div>
 
-        {/* Line Items Table */}
         <table className="w-full text-sm border border-border mt-4">
           <thead className="bg-secondary">
             <tr>
-              <th className="border p-2 w-12">Sl. No</th>
-              <th className="border p-2">Purpose</th>
-              <th className="border p-2 w-32">Amount</th>
-              <th className="border p-2 w-40">Remarks</th>
+              <th className="border p-2 text-left">S.No</th>
+              <th className="border p-2 text-left">Purpose of Requisition</th>
+              <th className="border p-2 text-right">Amount (Tk.)</th>
+              <th className="border p-2 text-left">Remarks</th>
             </tr>
           </thead>
           <tbody>
             {formData.lineItems.map((item, index) => (
               <tr key={item.id}>
-                <td className="border p-2 text-center">{index + 1}</td>
-                <td className="border p-2 bg-tiller-field">{item.purpose}</td>
-                <td className="border p-2 text-right bg-tiller-field">{item.amount}</td>
-                <td className="border p-2 bg-tiller-field">{item.remarks}</td>
+                <td className="border p-2">{index + 1}</td>
+                <td className="border p-2">{item.purpose}</td>
+                <td className="border p-2 text-right">{item.amount}</td>
+                <td className="border p-2">{item.remarks}</td>
               </tr>
             ))}
-            <tr className="font-bold">
-              <td className="border p-2 text-center" colSpan={2}>Total</td>
-              <td className="border p-2 text-right bg-tiller-field">{total.toLocaleString()}</td>
+            <tr className="font-bold bg-secondary">
+              <td className="border p-2" colSpan={2}>Total</td>
+              <td className="border p-2 text-right">{total.toFixed(2)}</td>
               <td className="border p-2"></td>
             </tr>
           </tbody>
         </table>
 
-        <FormField label="In Words" value={total > 0 ? `${numberToWords(total)} Taka Only` : ""} inline />
+        <FormField label="Total Amount (in words)" value={numberToWords(Math.floor(total)) + " Taka Only"} />
 
-        <div className="flex items-center gap-8">
-          <span className="font-medium">Nature:</span>
-          <div className="flex items-center gap-4">
-            <label className="flex items-center gap-2">
-              <div className={cn(
-                "w-4 h-4 border border-border",
-                formData.nature === "estimated" && "bg-tiller-green"
-              )} />
-              <span>Estimated</span>
-            </label>
-            <label className="flex items-center gap-2">
-              <div className={cn(
-                "w-4 h-4 border border-border",
-                formData.nature === "actual" && "bg-tiller-green"
-              )} />
-              <span>Actual</span>
-            </label>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-8">
-          <span className="font-medium">Preferred mode of payment:</span>
-          <div className="flex items-center gap-4">
-            {[
-              { value: "account_payee", label: "A/C Payee Cheque" },
-              { value: "bearer", label: "Bearer Cheque" },
-              { value: "cash", label: "Cash" },
-            ].map((mode) => (
-              <label key={mode.value} className="flex items-center gap-2">
-                <div className={cn(
-                  "w-4 h-4 border border-border",
-                  formData.paymentMode === mode.value && "bg-tiller-green"
-                )} />
-                <span>{mode.label}</span>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <span className="font-medium">Nature of this Estimate/Actual:</span>
+            <div className="flex gap-4">
+              <label className="flex items-center gap-2">
+                <div className={`w-4 h-4 border border-border ${formData.nature === "estimated" ? "bg-tiller-green" : ""}`} />
+                <span>Estimated</span>
               </label>
-            ))}
+              <label className="flex items-center gap-2">
+                <div className={`w-4 h-4 border border-border ${formData.nature === "actual" ? "bg-tiller-green" : ""}`} />
+                <span>Actual</span>
+              </label>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <span className="font-medium">Payment Mode:</span>
+            <div className="flex gap-4">
+              {[{ key: "account_payee", label: "A/C Payee" }, { key: "bearer", label: "Bearer" }, { key: "cash", label: "Cash" }].map((mode) => (
+                <label key={mode.key} className="flex items-center gap-2">
+                  <div className={`w-4 h-4 border border-border ${formData.paymentMode === mode.key ? "bg-tiller-green" : ""}`} />
+                  <span>{mode.label}</span>
+                </label>
+              ))}
+            </div>
           </div>
         </div>
 
-        {/* Signatures */}
-        <div className="grid grid-cols-3 gap-4 pt-8">
-          <div className="text-center">
-            <div className="border-b border-border h-12 mb-2"></div>
-            <p className="font-medium">Prepared by</p>
+        <div className="grid grid-cols-2 gap-4 pt-4">
+          <FormField label="Requested By" value="" inline />
+          <FormField label="Recommended By" value="" inline />
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <FormField label="Date" value="" inline />
+          <FormField label="Date" value="" inline />
+        </div>
+
+        <div className="mt-4 border border-border p-4">
+          <p className="font-bold mb-2">For Accounts Use</p>
+          <div className="grid grid-cols-2 gap-4">
+            <FormField label="Cheque/Cash No" value="" inline />
+            <FormField label="Amount" value="" inline />
           </div>
-          <div className="text-center">
-            <div className="border-b border-border h-12 mb-2"></div>
-            <p className="font-medium">Checked by</p>
-          </div>
-          <div className="text-center">
-            <div className="border-b border-border h-12 mb-2"></div>
-            <p className="font-medium">Approved by</p>
+          <div className="grid grid-cols-2 gap-4 mt-2">
+            <FormField label="Approved By" value="" inline />
+            <FormField label="Prepared By" value="" inline />
           </div>
         </div>
       </div>
@@ -297,19 +334,13 @@ export default function MoneyRequisition() {
     <AppLayout>
       <div className="container mx-auto px-4 py-8">
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
-          {/* Form Input Section */}
           <Card className="print:hidden">
             <CardHeader>
-              <CardTitle className="text-tiller-green">Money Requisition Form</CardTitle>
+              <CardTitle className="text-tiller-green">{editId ? "Edit Money Requisition" : "Money Requisition Form"}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
-              {/* Fill for Another Toggle */}
               <div className="flex items-center space-x-2 p-4 bg-muted rounded-lg">
-                <Checkbox
-                  id="fillForAnother"
-                  checked={formData.fillForAnother}
-                  onCheckedChange={(checked) => handleInputChange("fillForAnother", checked)}
-                />
+                <Checkbox id="fillForAnother" checked={formData.fillForAnother} onCheckedChange={(checked) => handleInputChange("fillForAnother", checked)} />
                 <Label htmlFor="fillForAnother">Fill for another person</Label>
               </div>
 
@@ -317,52 +348,16 @@ export default function MoneyRequisition() {
                 <div className="space-y-4 p-4 border border-border rounded-lg bg-secondary/50">
                   <h4 className="font-medium">Other Person's Details</h4>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="otherName">Full Name</Label>
-                      <Input
-                        id="otherName"
-                        value={formData.otherName}
-                        onChange={(e) => handleInputChange("otherName", e.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="otherDesignation">Designation</Label>
-                      <Input
-                        id="otherDesignation"
-                        value={formData.otherDesignation}
-                        onChange={(e) => handleInputChange("otherDesignation", e.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="otherMobile">Mobile Number</Label>
-                      <Input
-                        id="otherMobile"
-                        value={formData.otherMobileNumber}
-                        onChange={(e) => handleInputChange("otherMobileNumber", e.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="otherId">Employee ID</Label>
-                      <Input
-                        id="otherId"
-                        value={formData.otherEmployeeId}
-                        onChange={(e) => handleInputChange("otherEmployeeId", e.target.value)}
-                      />
-                    </div>
+                    <div className="space-y-2"><Label>Full Name</Label><Input value={formData.otherName} onChange={(e) => handleInputChange("otherName", e.target.value)} /></div>
+                    <div className="space-y-2"><Label>Designation</Label><Input value={formData.otherDesignation} onChange={(e) => handleInputChange("otherDesignation", e.target.value)} /></div>
+                    <div className="space-y-2"><Label>Mobile Number</Label><Input value={formData.otherMobileNumber} onChange={(e) => handleInputChange("otherMobileNumber", e.target.value)} /></div>
+                    <div className="space-y-2"><Label>Employee ID</Label><Input value={formData.otherEmployeeId} onChange={(e) => handleInputChange("otherEmployeeId", e.target.value)} /></div>
                   </div>
                 </div>
               )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="projectName">Project Name</Label>
-                  <Input
-                    id="projectName"
-                    value={formData.projectName}
-                    onChange={(e) => handleInputChange("projectName", e.target.value)}
-                    placeholder="Enter project name"
-                  />
-                </div>
+                <div className="space-y-2"><Label>Project Name</Label><Input value={formData.projectName} onChange={(e) => handleInputChange("projectName", e.target.value)} /></div>
                 <div className="space-y-2">
                   <Label>Date</Label>
                   <Popover>
@@ -372,150 +367,72 @@ export default function MoneyRequisition() {
                         {formData.date ? format(formData.date, "PPP") : "Pick a date"}
                       </Button>
                     </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0">
-                      <Calendar
-                        mode="single"
-                        selected={formData.date}
-                        onSelect={(date) => handleInputChange("date", date)}
-                        className="pointer-events-auto"
-                      />
-                    </PopoverContent>
+                    <PopoverContent className="w-auto p-0"><Calendar mode="single" selected={formData.date} onSelect={(date) => handleInputChange("date", date)} className="pointer-events-auto" /></PopoverContent>
                   </Popover>
                 </div>
               </div>
 
-              {/* Line Items */}
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <Label className="text-base font-semibold">Line Items</Label>
-                  <Button type="button" variant="outline" size="sm" onClick={addLineItem}>
-                    <Plus className="h-4 w-4 mr-1" />
-                    Add Item
-                  </Button>
+                  <Label className="text-lg">Line Items</Label>
+                  <Button type="button" variant="outline" size="sm" onClick={addLineItem}><Plus className="h-4 w-4 mr-1" />Add Item</Button>
                 </div>
-                
                 {formData.lineItems.map((item, index) => (
-                  <div key={item.id} className="grid grid-cols-12 gap-2 items-end">
-                    <div className="col-span-1 text-center text-sm text-muted-foreground pt-6">
-                      {index + 1}
-                    </div>
-                    <div className="col-span-5 space-y-1">
-                      <Label className="text-xs">Purpose</Label>
-                      <Input
-                        value={item.purpose}
-                        onChange={(e) => updateLineItem(item.id, "purpose", e.target.value)}
-                        placeholder="Purpose"
-                      />
-                    </div>
-                    <div className="col-span-2 space-y-1">
-                      <Label className="text-xs">Amount</Label>
-                      <Input
-                        value={item.amount}
-                        onChange={(e) => updateLineItem(item.id, "amount", e.target.value)}
-                        placeholder="0"
-                        type="number"
-                      />
-                    </div>
-                    <div className="col-span-3 space-y-1">
-                      <Label className="text-xs">Remarks</Label>
-                      <Input
-                        value={item.remarks}
-                        onChange={(e) => updateLineItem(item.id, "remarks", e.target.value)}
-                        placeholder="Remarks"
-                      />
-                    </div>
+                  <div key={item.id} className="grid grid-cols-12 gap-2 items-end p-3 bg-muted rounded-lg">
+                    <div className="col-span-1 text-center font-medium">{index + 1}</div>
+                    <div className="col-span-4 space-y-1"><Label className="text-xs">Purpose</Label><Input value={item.purpose} onChange={(e) => updateLineItem(item.id, "purpose", e.target.value)} /></div>
+                    <div className="col-span-3 space-y-1"><Label className="text-xs">Amount (Tk.)</Label><Input type="number" value={item.amount} onChange={(e) => updateLineItem(item.id, "amount", e.target.value)} /></div>
+                    <div className="col-span-3 space-y-1"><Label className="text-xs">Remarks</Label><Input value={item.remarks} onChange={(e) => updateLineItem(item.id, "remarks", e.target.value)} /></div>
                     <div className="col-span-1">
                       {formData.lineItems.length > 1 && (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => removeLineItem(item.id)}
-                          className="text-destructive hover:text-destructive"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        <Button type="button" variant="ghost" size="sm" onClick={() => removeLineItem(item.id)} className="text-destructive"><Trash2 className="h-4 w-4" /></Button>
                       )}
                     </div>
                   </div>
                 ))}
+                <div className="text-right font-bold">Total: Tk. {total.toFixed(2)}</div>
+              </div>
 
-                <div className="flex justify-end text-lg font-semibold">
-                  Total: {total.toLocaleString()} Tk
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Nature</Label>
+                  <RadioGroup value={formData.nature} onValueChange={(value) => handleInputChange("nature", value)} className="flex gap-4">
+                    <div className="flex items-center space-x-2"><RadioGroupItem value="estimated" id="estimated" /><Label htmlFor="estimated">Estimated</Label></div>
+                    <div className="flex items-center space-x-2"><RadioGroupItem value="actual" id="actual" /><Label htmlFor="actual">Actual</Label></div>
+                  </RadioGroup>
+                </div>
+                <div className="space-y-2">
+                  <Label>Payment Mode</Label>
+                  <Select value={formData.paymentMode} onValueChange={(value: any) => handleInputChange("paymentMode", value)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="account_payee">A/C Payee</SelectItem>
+                      <SelectItem value="bearer">Bearer</SelectItem>
+                      <SelectItem value="cash">Cash</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
 
-              {/* Nature */}
-              <div className="space-y-3">
-                <Label>Nature</Label>
-                <RadioGroup
-                  value={formData.nature}
-                  onValueChange={(value) => handleInputChange("nature", value)}
-                  className="flex gap-4"
-                >
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="estimated" id="estimated" />
-                    <Label htmlFor="estimated">Estimated</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="actual" id="actual" />
-                    <Label htmlFor="actual">Actual</Label>
-                  </div>
-                </RadioGroup>
-              </div>
+              <FileAttachments attachments={attachments} onAttachmentsChange={setAttachments} />
 
-              {/* Payment Mode */}
-              <div className="space-y-3">
-                <Label>Preferred Mode of Payment</Label>
-                <RadioGroup
-                  value={formData.paymentMode}
-                  onValueChange={(value) => handleInputChange("paymentMode", value)}
-                  className="flex flex-wrap gap-4"
-                >
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="account_payee" id="account_payee" />
-                    <Label htmlFor="account_payee">A/C Payee Cheque</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="bearer" id="bearer" />
-                    <Label htmlFor="bearer">Bearer Cheque</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="cash" id="cash" />
-                    <Label htmlFor="cash">Cash</Label>
-                  </div>
-                </RadioGroup>
-              </div>
-
-              {/* Action Buttons */}
               <div className="flex flex-wrap gap-3 pt-4">
                 <Button onClick={handleSave} disabled={saving} className="bg-tiller-green hover:bg-tiller-green/90">
-                  <Save className="h-4 w-4 mr-2" />
+                  {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
                   {saving ? "Saving..." : "Save Draft"}
                 </Button>
                 <Dialog>
-                  <DialogTrigger asChild>
-                    <Button variant="outline">
-                      <Eye className="h-4 w-4 mr-2" />
-                      Preview
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-                    <DialogHeader>
-                      <DialogTitle>Document Preview</DialogTitle>
-                    </DialogHeader>
-                    <PreviewContent />
-                  </DialogContent>
+                  <DialogTrigger asChild><Button variant="outline"><Eye className="h-4 w-4 mr-2" />Preview</Button></DialogTrigger>
+                  <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto"><DialogHeader><DialogTitle>Document Preview</DialogTitle></DialogHeader><PreviewContent /></DialogContent>
                 </Dialog>
-                <Button variant="outline" onClick={handlePrint}>
-                  <Printer className="h-4 w-4 mr-2" />
-                  Print
+                <Button variant="outline" onClick={handleExportPdf} disabled={exporting}>
+                  {exporting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
+                  {exporting ? "Exporting..." : "Download PDF"}
                 </Button>
               </div>
             </CardContent>
           </Card>
 
-          {/* Live Preview Section */}
           <div className="hidden xl:block">
             <div className="sticky top-4">
               <h3 className="text-lg font-semibold mb-4 text-foreground print:hidden">Live Preview</h3>
