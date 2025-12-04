@@ -40,11 +40,11 @@ export default function Profile() {
 
     setUserId(user.id);
 
-    const { data, error } = await supabase
-      .from("profiles")
+    const { data, error } = await (supabase
+      .from("profiles" as any)
       .select("*")
       .eq("user_id", user.id)
-      .maybeSingle();
+      .maybeSingle() as any);
 
     if (data) {
       setProfile({
@@ -62,23 +62,23 @@ export default function Profile() {
 
     setSaving(true);
 
-    const { data: existing } = await supabase
-      .from("profiles")
+    const { data: existing } = await (supabase
+      .from("profiles" as any)
       .select("id")
       .eq("user_id", userId)
-      .maybeSingle();
+      .maybeSingle() as any);
 
     let error;
     if (existing) {
-      const result = await supabase
-        .from("profiles")
+      const result = await (supabase
+        .from("profiles" as any)
         .update(profile)
-        .eq("user_id", userId);
+        .eq("user_id", userId) as any);
       error = result.error;
     } else {
-      const result = await supabase
-        .from("profiles")
-        .insert({ ...profile, user_id: userId });
+      const result = await (supabase
+        .from("profiles" as any)
+        .insert({ ...profile, user_id: userId }) as any);
       error = result.error;
     }
 

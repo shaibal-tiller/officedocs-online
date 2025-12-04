@@ -23,7 +23,8 @@ import { useNavigate } from "react-router-dom";
 
 interface Document {
   id: string;
-  form_type: string;
+  document_type: string;
+  title: string;
   form_data: any;
   status: string;
   created_at: string;
@@ -61,12 +62,12 @@ export default function History() {
       return;
     }
 
-    const { data, error } = await supabase
-      .from("documents")
+    const { data, error } = await (supabase
+      .from("documents" as any)
       .select("*")
       .eq("user_id", user.id)
       .eq("is_deleted", false)
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false }) as any);
 
     if (error) {
       toast({
@@ -82,10 +83,10 @@ export default function History() {
 
   const handleDelete = async (id: string) => {
     setDeleting(id);
-    const { error } = await supabase
-      .from("documents")
+    const { error } = await (supabase
+      .from("documents" as any)
       .update({ is_deleted: true })
-      .eq("id", id);
+      .eq("id", id) as any);
 
     setDeleting(null);
     if (error) {
@@ -107,12 +108,13 @@ export default function History() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    const { error } = await supabase.from("documents").insert({
+    const { error } = await (supabase.from("documents" as any).insert({
       user_id: user.id,
-      form_type: doc.form_type,
+      document_type: doc.document_type,
+      title: `${doc.title} (Copy)`,
       form_data: doc.form_data,
       status: "draft",
-    });
+    }) as any);
 
     if (error) {
       toast({
@@ -180,12 +182,12 @@ export default function History() {
                 <CardContent className="py-4">
                   <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div className="flex items-start gap-4">
-                      <div className={`w-10 h-10 rounded-lg ${formTypeColors[doc.form_type]} flex items-center justify-center flex-shrink-0`}>
+                      <div className={`w-10 h-10 rounded-lg ${formTypeColors[doc.document_type] || "bg-muted"} flex items-center justify-center flex-shrink-0`}>
                         <FileText className="h-5 w-5 text-primary-foreground" />
                       </div>
                       <div>
                         <h3 className="font-semibold text-foreground">
-                          {formTypeLabels[doc.form_type] || doc.form_type}
+                          {doc.title || formTypeLabels[doc.document_type] || doc.document_type}
                         </h3>
                         <p className="text-sm text-muted-foreground">
                           Created: {format(new Date(doc.created_at), "PPP 'at' p")}
