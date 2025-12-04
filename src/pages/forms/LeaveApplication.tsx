@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,16 +10,25 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FormHeader } from "@/components/forms/FormHeader";
 import { FormFooter } from "@/components/forms/FormFooter";
 import { FormField } from "@/components/forms/FormField";
+import { FileAttachments } from "@/components/forms/FileAttachments";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { CalendarIcon, Printer, Download, Eye, Save } from "lucide-react";
+import { CalendarIcon, Printer, Download, Eye, Save, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { exportToPdf } from "@/lib/pdfExport";
 
 type LeaveCategory = "casual" | "earned" | "sick" | "lwp";
+
+interface Attachment {
+  name: string;
+  url: string;
+  type: string;
+  size: number;
+}
 
 interface LeaveFormData {
   name: string;
@@ -41,6 +51,10 @@ interface LeaveFormData {
 }
 
 export default function LeaveApplication() {
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const editId = searchParams.get("edit");
+
   const [formData, setFormData] = useState<LeaveFormData>({
     name: "",
     designation: "",
@@ -61,15 +75,21 @@ export default function LeaveApplication() {
     otherEmployeeId: "",
   });
 
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [saving, setSaving] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [documentId, setDocumentId] = useState<string | null>(editId);
 
   useEffect(() => {
     loadUserProfile();
-  }, []);
+    if (editId) {
+      loadDocument(editId);
+    }
+  }, [editId]);
 
   const loadUserProfile = async () => {
     const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
+    if (user && !editId) {
       const { data: profile } = await (supabase
         .from("profiles" as any)
         .select("*")
@@ -85,6 +105,36 @@ export default function LeaveApplication() {
           employeeId: profile.employee_id || "",
         }));
       }
+    }
+  };
+
+  const loadDocument = async (id: string) => {
+    const { data, error } = await (supabase
+      .from("documents" as any)
+      .select("*")
+      .eq("id", id)
+      .maybeSingle() as any);
+
+    if (error) {
+      toast({
+        title: "Error loading document",
+        description: error.message,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (data) {
+      const formDataFromDb = data.form_data;
+      setFormData({
+        ...formDataFromDb,
+        startDate: formDataFromDb.startDate ? new Date(formDataFromDb.startDate) : undefined,
+        endDate: formDataFromDb.endDate ? new Date(formDataFromDb.endDate) : undefined,
+        dateOfJoining: formDataFromDb.dateOfJoining ? new Date(formDataFromDb.dateOfJoining) : undefined,
+        applicationDate: formDataFromDb.applicationDate ? new Date(formDataFromDb.applicationDate) : new Date(),
+      });
+      setAttachments(data.attachments || []);
+      setDocumentId(data.id);
     }
   };
 
@@ -106,31 +156,60 @@ export default function LeaveApplication() {
       return;
     }
 
-    const { error } = await (supabase.from("documents" as any).insert({
+    const docData = {
       user_id: user.id,
       document_type: "leave_application",
-      title: `Leave Application - ${formData.name || "Untitled"}`,
+      title: `Leave Application - ${formData.fillForAnother ? formData.otherName : formData.name || "Untitled"}`,
       form_data: formData,
       status: "draft",
-    }) as any);
+      attachments: attachments,
+    };
+
+    let result;
+    if (documentId) {
+      result = await (supabase
+        .from("documents" as any)
+        .update(docData)
+        .eq("id", documentId) as any);
+    } else {
+      result = await (supabase.from("documents" as any).insert(docData).select() as any);
+      if (result.data && result.data[0]) {
+        setDocumentId(result.data[0].id);
+      }
+    }
 
     setSaving(false);
-    if (error) {
+    if (result.error) {
       toast({
         title: "Error saving document",
-        description: error.message,
+        description: result.error.message,
         variant: "destructive",
       });
     } else {
       toast({
         title: "Document saved!",
-        description: "Your leave application has been saved as draft.",
+        description: documentId ? "Your changes have been saved." : "Your leave application has been saved as draft.",
       });
     }
   };
 
-  const handlePrint = () => {
-    window.print();
+  const handleExportPdf = async () => {
+    setExporting(true);
+    try {
+      const displayName = formData.fillForAnother ? formData.otherName : formData.name;
+      await exportToPdf("printable-document", `Leave_Application_${displayName || "Document"}`);
+      toast({
+        title: "PDF exported!",
+        description: "Your document has been downloaded as PDF.",
+      });
+    } catch (error) {
+      toast({
+        title: "Export failed",
+        description: "Failed to export PDF. Please try again.",
+        variant: "destructive",
+      });
+    }
+    setExporting(false);
   };
 
   const displayName = formData.fillForAnother ? formData.otherName : formData.name;
@@ -300,7 +379,9 @@ export default function LeaveApplication() {
           {/* Form Input Section */}
           <Card className="print:hidden">
             <CardHeader>
-              <CardTitle className="text-tiller-green">Leave Application Form</CardTitle>
+              <CardTitle className="text-tiller-green">
+                {editId ? "Edit Leave Application" : "Leave Application Form"}
+              </CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
               {/* Fill for Another Toggle */}
@@ -448,18 +529,18 @@ export default function LeaveApplication() {
                   id="reasonForLeave"
                   value={formData.reasonForLeave}
                   onChange={(e) => handleInputChange("reasonForLeave", e.target.value)}
-                  placeholder="Enter your reason for leave"
                   rows={3}
+                  placeholder="Explain the reason for your leave request..."
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="delegateName">Delegate Name</Label>
+                <Label htmlFor="delegateName">Delegate Name (colleague taking over)</Label>
                 <Input
                   id="delegateName"
                   value={formData.delegateName}
                   onChange={(e) => handleInputChange("delegateName", e.target.value)}
-                  placeholder="Name of colleague taking your responsibilities"
+                  placeholder="Name of colleague who will cover..."
                 />
               </div>
 
@@ -483,10 +564,16 @@ export default function LeaveApplication() {
                 </Popover>
               </div>
 
+              {/* File Attachments */}
+              <FileAttachments
+                attachments={attachments}
+                onAttachmentsChange={setAttachments}
+              />
+
               {/* Action Buttons */}
               <div className="flex flex-wrap gap-3 pt-4">
                 <Button onClick={handleSave} disabled={saving} className="bg-tiller-green hover:bg-tiller-green/90">
-                  <Save className="h-4 w-4 mr-2" />
+                  {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
                   {saving ? "Saving..." : "Save Draft"}
                 </Button>
                 <Dialog>
@@ -503,9 +590,9 @@ export default function LeaveApplication() {
                     <PreviewContent />
                   </DialogContent>
                 </Dialog>
-                <Button variant="outline" onClick={handlePrint}>
-                  <Printer className="h-4 w-4 mr-2" />
-                  Print
+                <Button variant="outline" onClick={handleExportPdf} disabled={exporting}>
+                  {exporting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
+                  {exporting ? "Exporting..." : "Download PDF"}
                 </Button>
               </div>
             </CardContent>
