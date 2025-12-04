@@ -9,6 +9,8 @@ import Profile from "./pages/Profile";
 import History from "./pages/History";
 import LeaveApplication from "./pages/forms/LeaveApplication";
 import MoneyRequisition from "./pages/forms/MoneyRequisition";
+import MaterialRequisition from "./pages/forms/MaterialRequisition";
+import AdvanceAdjustment from "./pages/forms/AdvanceAdjustment";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -27,8 +29,8 @@ const App = () => (
           <Route path="/history" element={<History />} />
           <Route path="/forms/leave" element={<LeaveApplication />} />
           <Route path="/forms/money" element={<MoneyRequisition />} />
-          <Route path="/forms/material" element={<Dashboard />} />
-          <Route path="/forms/advance" element={<Dashboard />} />
+          <Route path="/forms/material" element={<MaterialRequisition />} />
+          <Route path="/forms/advance" element={<AdvanceAdjustment />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>

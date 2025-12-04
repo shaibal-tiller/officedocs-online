@@ -70,11 +70,11 @@ export default function LeaveApplication() {
   const loadUserProfile = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
-      const { data: profile } = await supabase
-        .from("profiles")
+      const { data: profile } = await (supabase
+        .from("profiles" as any)
         .select("*")
         .eq("user_id", user.id)
-        .maybeSingle();
+        .maybeSingle() as any);
 
       if (profile) {
         setFormData((prev) => ({
@@ -106,12 +106,13 @@ export default function LeaveApplication() {
       return;
     }
 
-    const { error } = await supabase.from("documents").insert({
+    const { error } = await (supabase.from("documents" as any).insert({
       user_id: user.id,
-      form_type: "leave_application",
+      document_type: "leave_application",
+      title: `Leave Application - ${formData.name || "Untitled"}`,
       form_data: formData,
       status: "draft",
-    });
+    }) as any);
 
     setSaving(false);
     if (error) {
@@ -138,7 +139,7 @@ export default function LeaveApplication() {
   const displayId = formData.fillForAnother ? formData.otherEmployeeId : formData.employeeId;
 
   const PreviewContent = () => (
-    <div className="bg-card rounded-lg overflow-hidden shadow-lg print:shadow-none">
+    <div id="printable-document" className="bg-card rounded-lg overflow-hidden shadow-lg print:shadow-none">
       <FormHeader title="Leave Application Form" />
       <div className="p-6 space-y-4">
         <FormField label="Name of Staff requesting for leave" value={displayName} inline />
@@ -297,7 +298,7 @@ export default function LeaveApplication() {
       <div className="container mx-auto px-4 py-8">
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
           {/* Form Input Section */}
-          <Card>
+          <Card className="print:hidden">
             <CardHeader>
               <CardTitle className="text-tiller-green">Leave Application Form</CardTitle>
             </CardHeader>
@@ -447,31 +448,51 @@ export default function LeaveApplication() {
                   id="reasonForLeave"
                   value={formData.reasonForLeave}
                   onChange={(e) => handleInputChange("reasonForLeave", e.target.value)}
-                  placeholder="Enter your reason for leave..."
-                  rows={4}
+                  placeholder="Enter your reason for leave"
+                  rows={3}
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="delegateName">Delegate's Name (Colleague covering for you)</Label>
+                <Label htmlFor="delegateName">Delegate Name</Label>
                 <Input
                   id="delegateName"
                   value={formData.delegateName}
                   onChange={(e) => handleInputChange("delegateName", e.target.value)}
-                  placeholder="Name of colleague"
+                  placeholder="Name of colleague taking your responsibilities"
                 />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Application Date</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" className="w-full justify-start text-left font-normal">
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {formData.applicationDate ? format(formData.applicationDate, "PPP") : "Pick a date"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0">
+                    <Calendar
+                      mode="single"
+                      selected={formData.applicationDate}
+                      onSelect={(date) => handleInputChange("applicationDate", date)}
+                      className="pointer-events-auto"
+                    />
+                  </PopoverContent>
+                </Popover>
               </div>
 
               {/* Action Buttons */}
               <div className="flex flex-wrap gap-3 pt-4">
                 <Button onClick={handleSave} disabled={saving} className="bg-tiller-green hover:bg-tiller-green/90">
-                  <Save className="mr-2 h-4 w-4" />
+                  <Save className="h-4 w-4 mr-2" />
                   {saving ? "Saving..." : "Save Draft"}
                 </Button>
                 <Dialog>
                   <DialogTrigger asChild>
                     <Button variant="outline">
-                      <Eye className="mr-2 h-4 w-4" />
+                      <Eye className="h-4 w-4 mr-2" />
                       Preview
                     </Button>
                   </DialogTrigger>
@@ -483,24 +504,18 @@ export default function LeaveApplication() {
                   </DialogContent>
                 </Dialog>
                 <Button variant="outline" onClick={handlePrint}>
-                  <Printer className="mr-2 h-4 w-4" />
+                  <Printer className="h-4 w-4 mr-2" />
                   Print
-                </Button>
-                <Button variant="outline">
-                  <Download className="mr-2 h-4 w-4" />
-                  Export PDF
                 </Button>
               </div>
             </CardContent>
           </Card>
 
-          {/* Live Preview Section - Hidden on mobile */}
+          {/* Live Preview Section */}
           <div className="hidden xl:block">
-            <div className="sticky top-24">
-              <h3 className="text-lg font-semibold mb-4 text-foreground">Live Preview</h3>
-              <div className="transform scale-75 origin-top-left w-[133%]">
-                <PreviewContent />
-              </div>
+            <div className="sticky top-4">
+              <h3 className="text-lg font-semibold mb-4 text-foreground print:hidden">Live Preview</h3>
+              <PreviewContent />
             </div>
           </div>
         </div>

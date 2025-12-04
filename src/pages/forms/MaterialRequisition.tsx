@@ -12,30 +12,27 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { CalendarIcon, Printer, Download, Eye, Save, Plus, Trash2 } from "lucide-react";
 import { format } from "date-fns";
-import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-interface LineItem {
+interface MaterialItem {
   id: string;
-  purpose: string;
+  particulars: string;
+  quantity: string;
+  rate: string;
   amount: string;
   remarks: string;
 }
 
-interface MoneyFormData {
+interface MaterialFormData {
   name: string;
   designation: string;
   mobileNumber: string;
   employeeId: string;
   projectName: string;
   date: Date | undefined;
-  lineItems: LineItem[];
-  nature: "estimated" | "actual";
-  paymentMode: "account_payee" | "bearer" | "cash";
+  items: MaterialItem[];
   fillForAnother: boolean;
   otherName: string;
   otherDesignation: string;
@@ -43,17 +40,15 @@ interface MoneyFormData {
   otherEmployeeId: string;
 }
 
-export default function MoneyRequisition() {
-  const [formData, setFormData] = useState<MoneyFormData>({
+export default function MaterialRequisition() {
+  const [formData, setFormData] = useState<MaterialFormData>({
     name: "",
     designation: "",
     mobileNumber: "",
     employeeId: "",
     projectName: "",
     date: new Date(),
-    lineItems: [{ id: "1", purpose: "", amount: "", remarks: "" }],
-    nature: "estimated",
-    paymentMode: "cash",
+    items: [{ id: "1", particulars: "", quantity: "", rate: "", amount: "", remarks: "" }],
     fillForAnother: false,
     otherName: "",
     otherDesignation: "",
@@ -88,53 +83,47 @@ export default function MoneyRequisition() {
     }
   };
 
-  const handleInputChange = (field: keyof MoneyFormData, value: any) => {
+  const handleInputChange = (field: keyof MaterialFormData, value: any) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
-  const addLineItem = () => {
+  const addItem = () => {
     setFormData((prev) => ({
       ...prev,
-      lineItems: [...prev.lineItems, { id: Date.now().toString(), purpose: "", amount: "", remarks: "" }],
+      items: [...prev.items, { id: Date.now().toString(), particulars: "", quantity: "", rate: "", amount: "", remarks: "" }],
     }));
   };
 
-  const removeLineItem = (id: string) => {
+  const removeItem = (id: string) => {
     setFormData((prev) => ({
       ...prev,
-      lineItems: prev.lineItems.filter((item) => item.id !== id),
+      items: prev.items.filter((item) => item.id !== id),
     }));
   };
 
-  const updateLineItem = (id: string, field: keyof LineItem, value: string) => {
+  const updateItem = (id: string, field: keyof MaterialItem, value: string) => {
     setFormData((prev) => ({
       ...prev,
-      lineItems: prev.lineItems.map((item) =>
-        item.id === id ? { ...item, [field]: value } : item
-      ),
+      items: prev.items.map((item) => {
+        if (item.id === id) {
+          const updated = { ...item, [field]: value };
+          if (field === "quantity" || field === "rate") {
+            const qty = parseFloat(updated.quantity) || 0;
+            const rate = parseFloat(updated.rate) || 0;
+            updated.amount = (qty * rate).toString();
+          }
+          return updated;
+        }
+        return item;
+      }),
     }));
   };
 
   const calculateTotal = () => {
-    return formData.lineItems.reduce((sum, item) => {
+    return formData.items.reduce((sum, item) => {
       const amount = parseFloat(item.amount) || 0;
       return sum + amount;
     }, 0);
-  };
-
-  const numberToWords = (num: number): string => {
-    if (num === 0) return "Zero";
-    const ones = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine"];
-    const tens = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"];
-    const teens = ["Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen"];
-    
-    if (num < 10) return ones[num];
-    if (num < 20) return teens[num - 10];
-    if (num < 100) return tens[Math.floor(num / 10)] + (num % 10 !== 0 ? " " + ones[num % 10] : "");
-    if (num < 1000) return ones[Math.floor(num / 100)] + " Hundred" + (num % 100 !== 0 ? " " + numberToWords(num % 100) : "");
-    if (num < 100000) return numberToWords(Math.floor(num / 1000)) + " Thousand" + (num % 1000 !== 0 ? " " + numberToWords(num % 1000) : "");
-    if (num < 10000000) return numberToWords(Math.floor(num / 100000)) + " Lakh" + (num % 100000 !== 0 ? " " + numberToWords(num % 100000) : "");
-    return numberToWords(Math.floor(num / 10000000)) + " Crore" + (num % 10000000 !== 0 ? " " + numberToWords(num % 10000000) : "");
   };
 
   const handleSave = async () => {
@@ -153,8 +142,8 @@ export default function MoneyRequisition() {
 
     const { error } = await (supabase.from("documents" as any).insert({
       user_id: user.id,
-      document_type: "money_requisition",
-      title: `Money Requisition - ${formData.projectName || "Untitled"}`,
+      document_type: "material_requisition",
+      title: `Material Requisition - ${formData.projectName || "Untitled"}`,
       form_data: formData,
       status: "draft",
     }) as any);
@@ -169,7 +158,7 @@ export default function MoneyRequisition() {
     } else {
       toast({
         title: "Document saved!",
-        description: "Your money requisition has been saved as draft.",
+        description: "Your material requisition has been saved as draft.",
       });
     }
   };
@@ -186,7 +175,7 @@ export default function MoneyRequisition() {
 
   const PreviewContent = () => (
     <div id="printable-document" className="bg-card rounded-lg overflow-hidden shadow-lg print:shadow-none">
-      <FormHeader title="Requisition Form" />
+      <FormHeader title="Requisition Form for Material" />
       <div className="p-6 space-y-4">
         <div className="grid grid-cols-2 gap-4">
           <FormField label="Name" value={displayName} inline />
@@ -205,79 +194,42 @@ export default function MoneyRequisition() {
           <FormField label="Project Name" value={formData.projectName} inline />
         </div>
 
-        {/* Line Items Table */}
+        {/* Items Table */}
         <table className="w-full text-sm border border-border mt-4">
           <thead className="bg-secondary">
             <tr>
               <th className="border p-2 w-12">Sl. No</th>
-              <th className="border p-2">Purpose</th>
-              <th className="border p-2 w-32">Amount</th>
-              <th className="border p-2 w-40">Remarks</th>
+              <th className="border p-2">Particulars</th>
+              <th className="border p-2 w-20">Quantity</th>
+              <th className="border p-2 w-24">Rate</th>
+              <th className="border p-2 w-24">Amount</th>
+              <th className="border p-2 w-32">Remarks</th>
             </tr>
           </thead>
           <tbody>
-            {formData.lineItems.map((item, index) => (
+            {formData.items.map((item, index) => (
               <tr key={item.id}>
                 <td className="border p-2 text-center">{index + 1}</td>
-                <td className="border p-2 bg-tiller-field">{item.purpose}</td>
+                <td className="border p-2 bg-tiller-field">{item.particulars}</td>
+                <td className="border p-2 text-center bg-tiller-field">{item.quantity}</td>
+                <td className="border p-2 text-right bg-tiller-field">{item.rate}</td>
                 <td className="border p-2 text-right bg-tiller-field">{item.amount}</td>
                 <td className="border p-2 bg-tiller-field">{item.remarks}</td>
               </tr>
             ))}
             <tr className="font-bold">
-              <td className="border p-2 text-center" colSpan={2}>Total</td>
+              <td className="border p-2 text-center" colSpan={4}>Total</td>
               <td className="border p-2 text-right bg-tiller-field">{total.toLocaleString()}</td>
               <td className="border p-2"></td>
             </tr>
           </tbody>
         </table>
 
-        <FormField label="In Words" value={total > 0 ? `${numberToWords(total)} Taka Only` : ""} inline />
-
-        <div className="flex items-center gap-8">
-          <span className="font-medium">Nature:</span>
-          <div className="flex items-center gap-4">
-            <label className="flex items-center gap-2">
-              <div className={cn(
-                "w-4 h-4 border border-border",
-                formData.nature === "estimated" && "bg-tiller-green"
-              )} />
-              <span>Estimated</span>
-            </label>
-            <label className="flex items-center gap-2">
-              <div className={cn(
-                "w-4 h-4 border border-border",
-                formData.nature === "actual" && "bg-tiller-green"
-              )} />
-              <span>Actual</span>
-            </label>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-8">
-          <span className="font-medium">Preferred mode of payment:</span>
-          <div className="flex items-center gap-4">
-            {[
-              { value: "account_payee", label: "A/C Payee Cheque" },
-              { value: "bearer", label: "Bearer Cheque" },
-              { value: "cash", label: "Cash" },
-            ].map((mode) => (
-              <label key={mode.value} className="flex items-center gap-2">
-                <div className={cn(
-                  "w-4 h-4 border border-border",
-                  formData.paymentMode === mode.value && "bg-tiller-green"
-                )} />
-                <span>{mode.label}</span>
-              </label>
-            ))}
-          </div>
-        </div>
-
         {/* Signatures */}
         <div className="grid grid-cols-3 gap-4 pt-8">
           <div className="text-center">
             <div className="border-b border-border h-12 mb-2"></div>
-            <p className="font-medium">Prepared by</p>
+            <p className="font-medium">Requested by</p>
           </div>
           <div className="text-center">
             <div className="border-b border-border h-12 mb-2"></div>
@@ -300,7 +252,7 @@ export default function MoneyRequisition() {
           {/* Form Input Section */}
           <Card className="print:hidden">
             <CardHeader>
-              <CardTitle className="text-tiller-green">Money Requisition Form</CardTitle>
+              <CardTitle className="text-tiller-green">Material Requisition Form</CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
               {/* Fill for Another Toggle */}
@@ -384,58 +336,65 @@ export default function MoneyRequisition() {
                 </div>
               </div>
 
-              {/* Line Items */}
+              {/* Items */}
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <Label className="text-base font-semibold">Line Items</Label>
-                  <Button type="button" variant="outline" size="sm" onClick={addLineItem}>
+                  <Label className="text-base font-semibold">Material Items</Label>
+                  <Button type="button" variant="outline" size="sm" onClick={addItem}>
                     <Plus className="h-4 w-4 mr-1" />
                     Add Item
                   </Button>
                 </div>
                 
-                {formData.lineItems.map((item, index) => (
-                  <div key={item.id} className="grid grid-cols-12 gap-2 items-end">
-                    <div className="col-span-1 text-center text-sm text-muted-foreground pt-6">
-                      {index + 1}
-                    </div>
-                    <div className="col-span-5 space-y-1">
-                      <Label className="text-xs">Purpose</Label>
-                      <Input
-                        value={item.purpose}
-                        onChange={(e) => updateLineItem(item.id, "purpose", e.target.value)}
-                        placeholder="Purpose"
-                      />
-                    </div>
-                    <div className="col-span-2 space-y-1">
-                      <Label className="text-xs">Amount</Label>
-                      <Input
-                        value={item.amount}
-                        onChange={(e) => updateLineItem(item.id, "amount", e.target.value)}
-                        placeholder="0"
-                        type="number"
-                      />
-                    </div>
-                    <div className="col-span-3 space-y-1">
-                      <Label className="text-xs">Remarks</Label>
-                      <Input
-                        value={item.remarks}
-                        onChange={(e) => updateLineItem(item.id, "remarks", e.target.value)}
-                        placeholder="Remarks"
-                      />
-                    </div>
-                    <div className="col-span-1">
-                      {formData.lineItems.length > 1 && (
+                {formData.items.map((item, index) => (
+                  <div key={item.id} className="space-y-2 p-3 border border-border rounded-lg">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium">Item {index + 1}</span>
+                      {formData.items.length > 1 && (
                         <Button
                           type="button"
                           variant="ghost"
                           size="icon"
-                          onClick={() => removeLineItem(item.id)}
-                          className="text-destructive hover:text-destructive"
+                          onClick={() => removeItem(item.id)}
+                          className="text-destructive hover:text-destructive h-8 w-8"
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       )}
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                      <div className="col-span-2">
+                        <Input
+                          value={item.particulars}
+                          onChange={(e) => updateItem(item.id, "particulars", e.target.value)}
+                          placeholder="Particulars"
+                        />
+                      </div>
+                      <Input
+                        value={item.quantity}
+                        onChange={(e) => updateItem(item.id, "quantity", e.target.value)}
+                        placeholder="Qty"
+                        type="number"
+                      />
+                      <Input
+                        value={item.rate}
+                        onChange={(e) => updateItem(item.id, "rate", e.target.value)}
+                        placeholder="Rate"
+                        type="number"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Input
+                        value={item.amount}
+                        readOnly
+                        placeholder="Amount"
+                        className="bg-muted"
+                      />
+                      <Input
+                        value={item.remarks}
+                        onChange={(e) => updateItem(item.id, "remarks", e.target.value)}
+                        placeholder="Remarks"
+                      />
                     </div>
                   </div>
                 ))}
@@ -443,48 +402,6 @@ export default function MoneyRequisition() {
                 <div className="flex justify-end text-lg font-semibold">
                   Total: {total.toLocaleString()} Tk
                 </div>
-              </div>
-
-              {/* Nature */}
-              <div className="space-y-3">
-                <Label>Nature</Label>
-                <RadioGroup
-                  value={formData.nature}
-                  onValueChange={(value) => handleInputChange("nature", value)}
-                  className="flex gap-4"
-                >
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="estimated" id="estimated" />
-                    <Label htmlFor="estimated">Estimated</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="actual" id="actual" />
-                    <Label htmlFor="actual">Actual</Label>
-                  </div>
-                </RadioGroup>
-              </div>
-
-              {/* Payment Mode */}
-              <div className="space-y-3">
-                <Label>Preferred Mode of Payment</Label>
-                <RadioGroup
-                  value={formData.paymentMode}
-                  onValueChange={(value) => handleInputChange("paymentMode", value)}
-                  className="flex flex-wrap gap-4"
-                >
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="account_payee" id="account_payee" />
-                    <Label htmlFor="account_payee">A/C Payee Cheque</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="bearer" id="bearer" />
-                    <Label htmlFor="bearer">Bearer Cheque</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="cash" id="cash" />
-                    <Label htmlFor="cash">Cash</Label>
-                  </div>
-                </RadioGroup>
               </div>
 
               {/* Action Buttons */}
