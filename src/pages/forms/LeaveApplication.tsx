@@ -19,7 +19,8 @@ import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { exportToPdf } from "@/lib/pdfExport";
+import { exportToPdf, printDocument } from "@/lib/pdfExport";
+import { AttachmentPreview } from "@/components/forms/AttachmentPreview";
 
 type LeaveCategory = "casual" | "earned" | "sick" | "lwp";
 
@@ -189,6 +190,18 @@ export default function LeaveApplication() {
       toast({
         title: "Document saved!",
         description: documentId ? "Your changes have been saved." : "Your leave application has been saved as draft.",
+      });
+    }
+  };
+
+  const handlePrint = () => {
+    try {
+      printDocument("printable-document");
+    } catch (error) {
+      toast({
+        title: "Print failed",
+        description: "Failed to print. Please try again.",
+        variant: "destructive",
       });
     }
   };
@@ -367,6 +380,8 @@ export default function LeaveApplication() {
             <FormField label="Supervisor's Signature" value="" inline />
           </div>
         </div>
+        
+        <AttachmentPreview attachments={attachments} />
       </div>
       <FormFooter />
     </div>
@@ -593,6 +608,10 @@ export default function LeaveApplication() {
                 <Button variant="outline" onClick={handleExportPdf} disabled={exporting}>
                   {exporting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
                   {exporting ? "Exporting..." : "Download PDF"}
+                </Button>
+                <Button variant="outline" onClick={handlePrint}>
+                  <Printer className="h-4 w-4 mr-2" />
+                  Print
                 </Button>
               </div>
             </CardContent>
