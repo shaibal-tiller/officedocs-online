@@ -12,12 +12,13 @@ import { FormField } from "@/components/forms/FormField";
 import { FileAttachments } from "@/components/forms/FileAttachments";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { CalendarIcon, Download, Eye, Save, Plus, Trash2, Loader2 } from "lucide-react";
+import { CalendarIcon, Download, Eye, Save, Plus, Trash2, Loader2, Printer } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { exportToPdf } from "@/lib/pdfExport";
+import { exportToPdf, printDocument } from "@/lib/pdfExport";
+import { AttachmentPreview } from "@/components/forms/AttachmentPreview";
 
 interface Attachment {
   name: string;
@@ -206,6 +207,14 @@ export default function MaterialRequisition() {
     }
   };
 
+  const handlePrint = () => {
+    try {
+      printDocument("printable-document");
+    } catch (error) {
+      toast({ title: "Print failed", description: "Failed to print. Please try again.", variant: "destructive" });
+    }
+  };
+
   const handleExportPdf = async () => {
     setExporting(true);
     try {
@@ -290,6 +299,8 @@ export default function MaterialRequisition() {
             <FormField label="Date" value="" inline />
           </div>
         </div>
+        
+        <AttachmentPreview attachments={attachments} />
       </div>
       <FormFooter />
     </div>
@@ -373,6 +384,10 @@ export default function MaterialRequisition() {
                 <Button variant="outline" onClick={handleExportPdf} disabled={exporting}>
                   {exporting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
                   {exporting ? "Exporting..." : "Download PDF"}
+                </Button>
+                <Button variant="outline" onClick={handlePrint}>
+                  <Printer className="h-4 w-4 mr-2" />
+                  Print
                 </Button>
               </div>
             </CardContent>
