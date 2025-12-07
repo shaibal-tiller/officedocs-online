@@ -4,6 +4,7 @@ import { LogOut, User, FileText, Menu } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import tillerLogo from "@/assets/tiller-logo.jpg";
+import headerbg from "@/assets/header-bg.jpg";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -57,7 +58,8 @@ export function Header({ user }: HeaderProps) {
   );
 
   return (
-    <header className="bg-card border-b border-border sticky top-0 z-50">
+    <header className=" border-b border-border sticky top-0 z-50"
+      style={{ backgroundImage: `url(${headerbg})` }}>
       <div className="container mx-auto px-4 py-3 flex items-center justify-between">
         <Link to="/dashboard" className="flex items-center gap-3">
           <img src={tillerLogo} alt="Tiller Logo" className="h-12 w-auto" />
