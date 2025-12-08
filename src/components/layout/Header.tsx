@@ -1,6 +1,6 @@
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { LogOut, User, FileText, Menu } from "lucide-react";
+import { LogOut, User, FileText, Menu, Users } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import tillerLogo from "@/assets/tiller-logo.jpg";
@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useState } from "react";
+import { useAdminRole } from "@/hooks/useAdminRole";
 
 interface HeaderProps {
   user?: { email?: string } | null;
@@ -21,6 +22,7 @@ interface HeaderProps {
 export function Header({ user }: HeaderProps) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+  const { isAdmin } = useAdminRole();
 
   const handleSignOut = async () => {
     const { error } = await supabase.auth.signOut();
@@ -54,6 +56,16 @@ export function Header({ user }: HeaderProps) {
       >
         History
       </Link>
+      {isAdmin && (
+        <Link
+          to="/manage-users"
+          className="text-foreground hover:text-tiller-green transition-colors font-medium flex items-center gap-1"
+          onClick={() => setOpen(false)}
+        >
+          <Users className="h-4 w-4" />
+          Manage Users
+        </Link>
+      )}
     </>
   );
 

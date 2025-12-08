@@ -7,6 +7,7 @@ import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import Profile from "./pages/Profile";
 import History from "./pages/History";
+import ManageUsers from "./pages/ManageUsers";
 import LeaveApplication from "./pages/forms/LeaveApplication";
 import MoneyRequisition from "./pages/forms/MoneyRequisition";
 import MaterialRequisition from "./pages/forms/MaterialRequisition";
@@ -27,6 +28,7 @@ const App = () => (
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/history" element={<History />} />
+          <Route path="/manage-users" element={<ManageUsers />} />
           <Route path="/forms/leave" element={<LeaveApplication />} />
           <Route path="/forms/money" element={<MoneyRequisition />} />
           <Route path="/forms/material" element={<MaterialRequisition />} />
