@@ -210,7 +210,7 @@ export default function LeaveApplication() {
     setExporting(true);
     try {
       const displayName = formData.fillForAnother ? formData.otherName : formData.name;
-      await exportToPdf("printable-document", `Leave_Application_${displayName || "Document"}`);
+      await exportToPdf("printable-document", `Leave_Application_${displayName || "Document"}`, attachments);
       toast({
         title: "PDF exported!",
         description: "Your document has been downloaded as PDF.",
