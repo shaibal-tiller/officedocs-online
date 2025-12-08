@@ -231,7 +231,7 @@ export default function AdvanceAdjustment() {
   const handleExportPdf = async () => {
     setExporting(true);
     try {
-      await exportToPdf("printable-document", `Advance_Adjustment_${formData.projectName || "Document"}`);
+      await exportToPdf("printable-document", `Advance_Adjustment_${formData.projectName || "Document"}`, attachments);
       toast({ title: "PDF exported!", description: "Your document has been downloaded as PDF." });
     } catch (error) {
       toast({ title: "Export failed", description: "Failed to export PDF. Please try again.", variant: "destructive" });

@@ -228,7 +228,7 @@ export default function MoneyRequisition() {
   const handleExportPdf = async () => {
     setExporting(true);
     try {
-      await exportToPdf("printable-document", `Money_Requisition_${formData.projectName || "Document"}`);
+      await exportToPdf("printable-document", `Money_Requisition_${formData.projectName || "Document"}`, attachments);
       toast({ title: "PDF exported!", description: "Your document has been downloaded as PDF." });
     } catch (error) {
       toast({ title: "Export failed", description: "Failed to export PDF. Please try again.", variant: "destructive" });
