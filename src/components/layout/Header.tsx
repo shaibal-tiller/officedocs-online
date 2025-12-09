@@ -15,22 +15,9 @@ import { useState } from "react";
 export function Header() {
   const [open, setOpen] = useState(false);
 
+  // Removed Dashboard and Drafts links as requested
   const NavLinks = () => (
     <>
-      <Link
-        to="/dashboard"
-        className="text-foreground hover:text-tiller-green transition-colors font-medium"
-        onClick={() => setOpen(false)}
-      >
-        Dashboard
-      </Link>
-      <Link
-        to="/history"
-        className="text-foreground hover:text-tiller-green transition-colors font-medium"
-        onClick={() => setOpen(false)}
-      >
-        Drafts
-      </Link>
     </>
   );
 
@@ -38,7 +25,7 @@ export function Header() {
     <header className="border-b border-border sticky top-0 z-50"
       style={{ backgroundImage: `url(${headerbg})` }}>
       <div className="container mx-auto px-4 py-3 flex items-center justify-between">
-        <Link to="/dashboard" className="flex items-center gap-3">
+        <Link to="/" className="flex items-center gap-3">
           <img src={tillerLogo} alt="Tiller Logo" className="h-12 w-auto" />
           <div className="hidden sm:block">
             <h1 className="text-xl font-bold text-tiller-green">Tiller</h1>
@@ -46,7 +33,7 @@ export function Header() {
           </div>
         </Link>
 
-        {/* Desktop Navigation */}
+        {/* Desktop Navigation - now empty */}
         <nav className="hidden md:flex items-center gap-6">
           <NavLinks />
         </nav>
@@ -74,7 +61,7 @@ export function Header() {
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* Mobile Menu */}
+          {/* Mobile Menu - now empty of main links */}
           <Sheet open={open} onOpenChange={setOpen}>
             <SheetTrigger asChild className="md:hidden">
               <Button variant="ghost" size="icon">
