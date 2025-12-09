@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useSearchParams, useNavigate } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,10 +17,10 @@ import { CalendarIcon, Printer, Download, Eye, Save, Loader2 } from "lucide-reac
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
-import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { exportToPdf, printDocument } from "@/lib/pdfExport";
 import { AttachmentPreview } from "@/components/forms/AttachmentPreview";
+import { useDrafts, useProfile } from "@/hooks/useLocalStorage";
 
 type LeaveCategory = "casual" | "earned" | "sick" | "lwp";
 
@@ -53,8 +53,9 @@ interface LeaveFormData {
 
 export default function LeaveApplication() {
   const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
   const editId = searchParams.get("edit");
+  const { saveDraft, getDraft } = useDrafts();
+  const { profile } = useProfile();
 
   const [formData, setFormData] = useState<LeaveFormData>({
     name: "",
@@ -82,116 +83,59 @@ export default function LeaveApplication() {
   const [documentId, setDocumentId] = useState<string | null>(editId);
 
   useEffect(() => {
-    loadUserProfile();
-    if (editId) {
-      loadDocument(editId);
+    // Load profile data
+    if (!editId) {
+      setFormData((prev) => ({
+        ...prev,
+        name: profile.full_name || "",
+        designation: profile.designation || "",
+        mobileNumber: profile.mobile_number || "",
+        employeeId: profile.employee_id || "",
+      }));
     }
-  }, [editId]);
 
-  const loadUserProfile = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user && !editId) {
-      const { data: profile } = await (supabase
-        .from("profiles" as any)
-        .select("*")
-        .eq("user_id", user.id)
-        .maybeSingle() as any);
-
-      if (profile) {
-        setFormData((prev) => ({
-          ...prev,
-          name: profile.full_name || "",
-          designation: profile.designation || "",
-          mobileNumber: profile.mobile_number || "",
-          employeeId: profile.employee_id || "",
-        }));
+    // Load draft if editing
+    if (editId) {
+      const draft = getDraft(editId);
+      if (draft) {
+        const formDataFromDraft = draft.form_data;
+        setFormData({
+          ...formDataFromDraft,
+          startDate: formDataFromDraft.startDate ? new Date(formDataFromDraft.startDate) : undefined,
+          endDate: formDataFromDraft.endDate ? new Date(formDataFromDraft.endDate) : undefined,
+          dateOfJoining: formDataFromDraft.dateOfJoining ? new Date(formDataFromDraft.dateOfJoining) : undefined,
+          applicationDate: formDataFromDraft.applicationDate ? new Date(formDataFromDraft.applicationDate) : new Date(),
+        });
+        setAttachments(draft.attachments || []);
+        setDocumentId(draft.id);
       }
     }
-  };
-
-  const loadDocument = async (id: string) => {
-    const { data, error } = await (supabase
-      .from("documents" as any)
-      .select("*")
-      .eq("id", id)
-      .maybeSingle() as any);
-
-    if (error) {
-      toast({
-        title: "Error loading document",
-        description: error.message,
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (data) {
-      const formDataFromDb = data.form_data;
-      setFormData({
-        ...formDataFromDb,
-        startDate: formDataFromDb.startDate ? new Date(formDataFromDb.startDate) : undefined,
-        endDate: formDataFromDb.endDate ? new Date(formDataFromDb.endDate) : undefined,
-        dateOfJoining: formDataFromDb.dateOfJoining ? new Date(formDataFromDb.dateOfJoining) : undefined,
-        applicationDate: formDataFromDb.applicationDate ? new Date(formDataFromDb.applicationDate) : new Date(),
-      });
-      setAttachments(data.attachments || []);
-      setDocumentId(data.id);
-    }
-  };
+  }, [editId, profile, getDraft]);
 
   const handleInputChange = (field: keyof LeaveFormData, value: any) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
-  const handleSave = async () => {
+  const handleSave = () => {
     setSaving(true);
-    const { data: { user } } = await supabase.auth.getUser();
     
-    if (!user) {
-      toast({
-        title: "Error",
-        description: "You must be logged in to save documents",
-        variant: "destructive",
-      });
-      setSaving(false);
-      return;
-    }
-
-    const docData = {
-      user_id: user.id,
+    const displayName = formData.fillForAnother ? formData.otherName : formData.name;
+    const newId = saveDraft({
       document_type: "leave_application",
-      title: `Leave Application - ${formData.fillForAnother ? formData.otherName : formData.name || "Untitled"}`,
+      title: `Leave Application - ${displayName || "Untitled"}`,
       form_data: formData,
-      status: "draft",
       attachments: attachments,
-    };
+    }, documentId || undefined);
 
-    let result;
-    if (documentId) {
-      result = await (supabase
-        .from("documents" as any)
-        .update(docData)
-        .eq("id", documentId) as any);
-    } else {
-      result = await (supabase.from("documents" as any).insert(docData).select() as any);
-      if (result.data && result.data[0]) {
-        setDocumentId(result.data[0].id);
-      }
+    if (newId && !documentId) {
+      setDocumentId(newId);
     }
 
     setSaving(false);
-    if (result.error) {
-      toast({
-        title: "Error saving document",
-        description: result.error.message,
-        variant: "destructive",
-      });
-    } else {
-      toast({
-        title: "Document saved!",
-        description: documentId ? "Your changes have been saved." : "Your leave application has been saved as draft.",
-      });
-    }
+    toast({
+      title: "Draft saved!",
+      description: "Your leave application has been saved locally.",
+    });
   };
 
   const handlePrint = () => {

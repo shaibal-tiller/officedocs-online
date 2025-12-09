@@ -1,8 +1,6 @@
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { LogOut, User, FileText, Menu, Users } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
-import { toast } from "@/hooks/use-toast";
+import { User, FileText, Menu } from "lucide-react";
 import tillerLogo from "@/assets/tiller-logo.jpg";
 import headerbg from "@/assets/header-bg.jpg";
 import {
@@ -13,32 +11,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useState } from "react";
-import { useAdminRole } from "@/hooks/useAdminRole";
 
-interface HeaderProps {
-  user?: { email?: string } | null;
-}
-
-export function Header({ user }: HeaderProps) {
-  const navigate = useNavigate();
+export function Header() {
   const [open, setOpen] = useState(false);
-  const { isAdmin } = useAdminRole();
-
-  const handleSignOut = async () => {
-    const { error } = await supabase.auth.signOut();
-    if (error) {
-      toast({
-        title: "Error signing out",
-        description: error.message,
-        variant: "destructive",
-      });
-    } else {
-      toast({
-        title: "Signed out successfully",
-      });
-      navigate("/auth");
-    }
-  };
 
   const NavLinks = () => (
     <>
@@ -54,23 +29,13 @@ export function Header({ user }: HeaderProps) {
         className="text-foreground hover:text-tiller-green transition-colors font-medium"
         onClick={() => setOpen(false)}
       >
-        History
+        Drafts
       </Link>
-      {isAdmin && (
-        <Link
-          to="/manage-users"
-          className="text-foreground hover:text-tiller-green transition-colors font-medium flex items-center gap-1"
-          onClick={() => setOpen(false)}
-        >
-          <Users className="h-4 w-4" />
-          Manage Users
-        </Link>
-      )}
     </>
   );
 
   return (
-    <header className=" border-b border-border sticky top-0 z-50"
+    <header className="border-b border-border sticky top-0 z-50"
       style={{ backgroundImage: `url(${headerbg})` }}>
       <div className="container mx-auto px-4 py-3 flex items-center justify-between">
         <Link to="/dashboard" className="flex items-center gap-3">
@@ -81,56 +46,48 @@ export function Header({ user }: HeaderProps) {
           </div>
         </Link>
 
-        {user && (
-          <>
-            {/* Desktop Navigation */}
-            <nav className="hidden md:flex items-center gap-6">
-              <NavLinks />
-            </nav>
+        {/* Desktop Navigation */}
+        <nav className="hidden md:flex items-center gap-6">
+          <NavLinks />
+        </nav>
 
-            <div className="flex items-center gap-3">
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon" className="rounded-full">
-                    <User className="h-5 w-5" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-48">
-                  <DropdownMenuItem asChild>
-                    <Link to="/profile" className="flex items-center gap-2">
-                      <User className="h-4 w-4" />
-                      Profile
-                    </Link>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem asChild>
-                    <Link to="/history" className="flex items-center gap-2">
-                      <FileText className="h-4 w-4" />
-                      My Documents
-                    </Link>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={handleSignOut} className="text-destructive">
-                    <LogOut className="h-4 w-4 mr-2" />
-                    Sign Out
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+        <div className="flex items-center gap-3">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="rounded-full">
+                <User className="h-5 w-5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuItem asChild>
+                <Link to="/profile" className="flex items-center gap-2">
+                  <User className="h-4 w-4" />
+                  Profile
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link to="/history" className="flex items-center gap-2">
+                  <FileText className="h-4 w-4" />
+                  My Drafts
+                </Link>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
-              {/* Mobile Menu */}
-              <Sheet open={open} onOpenChange={setOpen}>
-                <SheetTrigger asChild className="md:hidden">
-                  <Button variant="ghost" size="icon">
-                    <Menu className="h-5 w-5" />
-                  </Button>
-                </SheetTrigger>
-                <SheetContent side="right" className="w-64">
-                  <nav className="flex flex-col gap-4 mt-8">
-                    <NavLinks />
-                  </nav>
-                </SheetContent>
-              </Sheet>
-            </div>
-          </>
-        )}
+          {/* Mobile Menu */}
+          <Sheet open={open} onOpenChange={setOpen}>
+            <SheetTrigger asChild className="md:hidden">
+              <Button variant="ghost" size="icon">
+                <Menu className="h-5 w-5" />
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="right" className="w-64">
+              <nav className="flex flex-col gap-4 mt-8">
+                <NavLinks />
+              </nav>
+            </SheetContent>
+          </Sheet>
+        </div>
       </div>
     </header>
   );

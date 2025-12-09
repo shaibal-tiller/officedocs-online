@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useSearchParams, useNavigate } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,12 +15,12 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { CalendarIcon, Download, Eye, Save, Plus, Trash2, Loader2, Printer } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "@/hooks/use-toast";
-import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { exportToPdf, printDocument } from "@/lib/pdfExport";
 import { AttachmentPreview } from "@/components/forms/AttachmentPreview";
+import { useDrafts, useProfile } from "@/hooks/useLocalStorage";
 
 interface Attachment {
   name: string;
@@ -55,8 +55,9 @@ interface MoneyFormData {
 
 export default function MoneyRequisition() {
   const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
   const editId = searchParams.get("edit");
+  const { saveDraft, getDraft } = useDrafts();
+  const { profile } = useProfile();
 
   const [formData, setFormData] = useState<MoneyFormData>({
     name: "",
@@ -81,55 +82,29 @@ export default function MoneyRequisition() {
   const [documentId, setDocumentId] = useState<string | null>(editId);
 
   useEffect(() => {
-    loadUserProfile();
-    if (editId) {
-      loadDocument(editId);
+    if (!editId) {
+      setFormData((prev) => ({
+        ...prev,
+        name: profile.full_name || "",
+        designation: profile.designation || "",
+        mobileNumber: profile.mobile_number || "",
+        employeeId: profile.employee_id || "",
+      }));
     }
-  }, [editId]);
 
-  const loadUserProfile = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user && !editId) {
-      const { data: profile } = await (supabase
-        .from("profiles" as any)
-        .select("*")
-        .eq("user_id", user.id)
-        .maybeSingle() as any);
-
-      if (profile) {
-        setFormData((prev) => ({
-          ...prev,
-          name: profile.full_name || "",
-          designation: profile.designation || "",
-          mobileNumber: profile.mobile_number || "",
-          employeeId: profile.employee_id || "",
-        }));
+    if (editId) {
+      const draft = getDraft(editId);
+      if (draft) {
+        const formDataFromDraft = draft.form_data;
+        setFormData({
+          ...formDataFromDraft,
+          date: formDataFromDraft.date ? new Date(formDataFromDraft.date) : new Date(),
+        });
+        setAttachments(draft.attachments || []);
+        setDocumentId(draft.id);
       }
     }
-  };
-
-  const loadDocument = async (id: string) => {
-    const { data, error } = await (supabase
-      .from("documents" as any)
-      .select("*")
-      .eq("id", id)
-      .maybeSingle() as any);
-
-    if (error) {
-      toast({ title: "Error loading document", description: error.message, variant: "destructive" });
-      return;
-    }
-
-    if (data) {
-      const formDataFromDb = data.form_data;
-      setFormData({
-        ...formDataFromDb,
-        date: formDataFromDb.date ? new Date(formDataFromDb.date) : new Date(),
-      });
-      setAttachments(data.attachments || []);
-      setDocumentId(data.id);
-    }
-  };
+  }, [editId, profile, getDraft]);
 
   const handleInputChange = (field: keyof MoneyFormData, value: any) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -180,41 +155,22 @@ export default function MoneyRequisition() {
     return numberToWords(Math.floor(num / 10000000)) + " Crore" + (num % 10000000 !== 0 ? " " + numberToWords(num % 10000000) : "");
   };
 
-  const handleSave = async () => {
+  const handleSave = () => {
     setSaving(true);
-    const { data: { user } } = await supabase.auth.getUser();
     
-    if (!user) {
-      toast({ title: "Error", description: "You must be logged in to save documents", variant: "destructive" });
-      setSaving(false);
-      return;
-    }
-
-    const docData = {
-      user_id: user.id,
+    const newId = saveDraft({
       document_type: "money_requisition",
       title: `Money Requisition - ${formData.projectName || "Untitled"}`,
       form_data: formData,
-      status: "draft",
       attachments: attachments,
-    };
+    }, documentId || undefined);
 
-    let result;
-    if (documentId) {
-      result = await (supabase.from("documents" as any).update(docData).eq("id", documentId) as any);
-    } else {
-      result = await (supabase.from("documents" as any).insert(docData).select() as any);
-      if (result.data && result.data[0]) {
-        setDocumentId(result.data[0].id);
-      }
+    if (newId && !documentId) {
+      setDocumentId(newId);
     }
 
     setSaving(false);
-    if (result.error) {
-      toast({ title: "Error saving document", description: result.error.message, variant: "destructive" });
-    } else {
-      toast({ title: "Document saved!", description: documentId ? "Your changes have been saved." : "Your money requisition has been saved as draft." });
-    }
+    toast({ title: "Draft saved!", description: "Your money requisition has been saved locally." });
   };
 
   const handlePrint = () => {
@@ -407,19 +363,19 @@ export default function MoneyRequisition() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Nature</Label>
-                  <RadioGroup value={formData.nature} onValueChange={(value) => handleInputChange("nature", value)} className="flex gap-4">
+                  <RadioGroup value={formData.nature} onValueChange={(val) => handleInputChange("nature", val)}>
                     <div className="flex items-center space-x-2"><RadioGroupItem value="estimated" id="estimated" /><Label htmlFor="estimated">Estimated</Label></div>
                     <div className="flex items-center space-x-2"><RadioGroupItem value="actual" id="actual" /><Label htmlFor="actual">Actual</Label></div>
                   </RadioGroup>
                 </div>
                 <div className="space-y-2">
                   <Label>Payment Mode</Label>
-                  <Select value={formData.paymentMode} onValueChange={(value: any) => handleInputChange("paymentMode", value)}>
+                  <Select value={formData.paymentMode} onValueChange={(val) => handleInputChange("paymentMode", val)}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="cash">Cash</SelectItem>
                       <SelectItem value="account_payee">A/C Payee</SelectItem>
                       <SelectItem value="bearer">Bearer</SelectItem>
-                      <SelectItem value="cash">Cash</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -440,10 +396,7 @@ export default function MoneyRequisition() {
                   {exporting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
                   {exporting ? "Exporting..." : "Download PDF"}
                 </Button>
-                <Button variant="outline" onClick={handlePrint}>
-                  <Printer className="h-4 w-4 mr-2" />
-                  Print
-                </Button>
+                <Button variant="outline" onClick={handlePrint}><Printer className="h-4 w-4 mr-2" />Print</Button>
               </div>
             </CardContent>
           </Card>
