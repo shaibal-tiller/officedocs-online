@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useSearchParams, useNavigate } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,10 +15,10 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { CalendarIcon, Download, Eye, Save, Plus, Trash2, Loader2, Printer } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "@/hooks/use-toast";
-import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { exportToPdf, printDocument } from "@/lib/pdfExport";
 import { AttachmentPreview } from "@/components/forms/AttachmentPreview";
+import { useDrafts, useProfile } from "@/hooks/useLocalStorage";
 
 interface Attachment {
   name: string;
@@ -55,8 +55,9 @@ interface AdvanceFormData {
 
 export default function AdvanceAdjustment() {
   const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
   const editId = searchParams.get("edit");
+  const { saveDraft, getDraft } = useDrafts();
+  const { profile } = useProfile();
 
   const [formData, setFormData] = useState<AdvanceFormData>({
     name: "",
@@ -80,59 +81,33 @@ export default function AdvanceAdjustment() {
   const [documentId, setDocumentId] = useState<string | null>(editId);
 
   useEffect(() => {
-    loadUserProfile();
-    if (editId) {
-      loadDocument(editId);
+    if (!editId) {
+      setFormData((prev) => ({
+        ...prev,
+        name: profile.full_name || "",
+        designation: profile.designation || "",
+        mobileNumber: profile.mobile_number || "",
+        employeeId: profile.employee_id || "",
+      }));
     }
-  }, [editId]);
 
-  const loadUserProfile = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user && !editId) {
-      const { data: profile } = await (supabase
-        .from("profiles" as any)
-        .select("*")
-        .eq("user_id", user.id)
-        .maybeSingle() as any);
-
-      if (profile) {
-        setFormData((prev) => ({
-          ...prev,
-          name: profile.full_name || "",
-          designation: profile.designation || "",
-          mobileNumber: profile.mobile_number || "",
-          employeeId: profile.employee_id || "",
-        }));
+    if (editId) {
+      const draft = getDraft(editId);
+      if (draft) {
+        const formDataFromDraft = draft.form_data;
+        setFormData({
+          ...formDataFromDraft,
+          advanceDate: formDataFromDraft.advanceDate ? new Date(formDataFromDraft.advanceDate) : new Date(),
+          items: formDataFromDraft.items?.map((item: any) => ({
+            ...item,
+            date: item.date ? new Date(item.date) : new Date(),
+          })) || [],
+        });
+        setAttachments(draft.attachments || []);
+        setDocumentId(draft.id);
       }
     }
-  };
-
-  const loadDocument = async (id: string) => {
-    const { data, error } = await (supabase
-      .from("documents" as any)
-      .select("*")
-      .eq("id", id)
-      .maybeSingle() as any);
-
-    if (error) {
-      toast({ title: "Error loading document", description: error.message, variant: "destructive" });
-      return;
-    }
-
-    if (data) {
-      const formDataFromDb = data.form_data;
-      setFormData({
-        ...formDataFromDb,
-        advanceDate: formDataFromDb.advanceDate ? new Date(formDataFromDb.advanceDate) : new Date(),
-        items: formDataFromDb.items?.map((item: any) => ({
-          ...item,
-          date: item.date ? new Date(item.date) : new Date(),
-        })) || [],
-      });
-      setAttachments(data.attachments || []);
-      setDocumentId(data.id);
-    }
-  };
+  }, [editId, profile, getDraft]);
 
   const handleInputChange = (field: keyof AdvanceFormData, value: any) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -183,41 +158,22 @@ export default function AdvanceAdjustment() {
     return advance - expense;
   };
 
-  const handleSave = async () => {
+  const handleSave = () => {
     setSaving(true);
-    const { data: { user } } = await supabase.auth.getUser();
     
-    if (!user) {
-      toast({ title: "Error", description: "You must be logged in to save documents", variant: "destructive" });
-      setSaving(false);
-      return;
-    }
-
-    const docData = {
-      user_id: user.id,
+    const newId = saveDraft({
       document_type: "advance_adjustment",
       title: `Advance Adjustment - ${formData.projectName || "Untitled"}`,
       form_data: formData,
-      status: "draft",
       attachments: attachments,
-    };
+    }, documentId || undefined);
 
-    let result;
-    if (documentId) {
-      result = await (supabase.from("documents" as any).update(docData).eq("id", documentId) as any);
-    } else {
-      result = await (supabase.from("documents" as any).insert(docData).select() as any);
-      if (result.data && result.data[0]) {
-        setDocumentId(result.data[0].id);
-      }
+    if (newId && !documentId) {
+      setDocumentId(newId);
     }
 
     setSaving(false);
-    if (result.error) {
-      toast({ title: "Error saving document", description: result.error.message, variant: "destructive" });
-    } else {
-      toast({ title: "Document saved!", description: documentId ? "Your changes have been saved." : "Your advance adjustment has been saved as draft." });
-    }
+    toast({ title: "Draft saved!", description: "Your advance adjustment has been saved locally." });
   };
 
   const handlePrint = () => {
@@ -405,14 +361,16 @@ export default function AdvanceAdjustment() {
                       <div className="space-y-1 col-span-2"><Label className="text-xs">Particulars</Label><Input value={item.particulars} onChange={(e) => updateItem(item.id, "particulars", e.target.value)} /></div>
                       <div className="space-y-1"><Label className="text-xs">Quantity</Label><Input type="number" value={item.quantity} onChange={(e) => updateItem(item.id, "quantity", e.target.value)} /></div>
                       <div className="space-y-1"><Label className="text-xs">Unit Cost</Label><Input type="number" value={item.unitCost} onChange={(e) => updateItem(item.id, "unitCost", e.target.value)} /></div>
-                      <div className="space-y-1"><Label className="text-xs">Total Cost</Label><Input value={item.totalCost} readOnly className="bg-muted" /></div>
+                      <div className="space-y-1"><Label className="text-xs">Total</Label><Input value={item.totalCost} readOnly className="bg-muted" /></div>
                     </div>
+                    <div className="space-y-1"><Label className="text-xs">Remarks</Label><Input value={item.remarks} onChange={(e) => updateItem(item.id, "remarks", e.target.value)} /></div>
                   </div>
                 ))}
-                <div className="grid grid-cols-3 gap-4 p-4 bg-secondary rounded-lg">
-                  <div><span className="text-sm text-muted-foreground">Advance:</span> <span className="font-bold">Tk. {formData.advanceAmount || "0"}</span></div>
-                  <div><span className="text-sm text-muted-foreground">Expense:</span> <span className="font-bold">Tk. {totalExpense.toFixed(2)}</span></div>
-                  <div><span className="text-sm text-muted-foreground">{balance >= 0 ? "Due:" : "Payable:"}</span> <span className={`font-bold ${balance < 0 ? "text-destructive" : "text-tiller-green"}`}>Tk. {Math.abs(balance).toFixed(2)}</span></div>
+                <div className="text-right space-y-1">
+                  <p className="font-bold">Total Expense: Tk. {totalExpense.toFixed(2)}</p>
+                  <p className={`font-bold ${balance >= 0 ? "text-tiller-green" : "text-destructive"}`}>
+                    {balance >= 0 ? "Balance Due" : "Amount Payable"}: Tk. {Math.abs(balance).toFixed(2)}
+                  </p>
                 </div>
               </div>
 
@@ -431,10 +389,7 @@ export default function AdvanceAdjustment() {
                   {exporting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
                   {exporting ? "Exporting..." : "Download PDF"}
                 </Button>
-                <Button variant="outline" onClick={handlePrint}>
-                  <Printer className="h-4 w-4 mr-2" />
-                  Print
-                </Button>
+                <Button variant="outline" onClick={handlePrint}><Printer className="h-4 w-4 mr-2" />Print</Button>
               </div>
             </CardContent>
           </Card>

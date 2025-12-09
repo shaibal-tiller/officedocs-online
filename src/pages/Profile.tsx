@@ -1,124 +1,26 @@
-import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
-import { Loader2, Save, User } from "lucide-react";
-import { Skeleton } from "@/components/ui/skeleton";
-
-interface ProfileData {
-  full_name: string;
-  employee_id: string;
-  designation: string;
-  mobile_number: string;
-}
+import { Save, User } from "lucide-react";
+import { useProfile } from "@/hooks/useLocalStorage";
 
 export default function Profile() {
-  const [profile, setProfile] = useState<ProfileData>({
-    full_name: "",
-    employee_id: "",
-    designation: "",
-    mobile_number: "",
-  });
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [userId, setUserId] = useState<string | null>(null);
+  const { profile, saveProfile } = useProfile();
 
-  useEffect(() => {
-    loadProfile();
-  }, []);
-
-  const loadProfile = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      setLoading(false);
-      return;
-    }
-
-    setUserId(user.id);
-
-    const { data, error } = await (supabase
-      .from("profiles" as any)
-      .select("*")
-      .eq("user_id", user.id)
-      .maybeSingle() as any);
-
-    if (data) {
-      setProfile({
-        full_name: data.full_name || "",
-        employee_id: data.employee_id || "",
-        designation: data.designation || "",
-        mobile_number: data.mobile_number || "",
-      });
-    }
-    setLoading(false);
+  const handleChange = (field: keyof typeof profile, value: string) => {
+    saveProfile({ ...profile, [field]: value });
   };
 
-  const handleSave = async () => {
-    if (!userId) return;
-
-    setSaving(true);
-
-    const { data: existing } = await (supabase
-      .from("profiles" as any)
-      .select("id")
-      .eq("user_id", userId)
-      .maybeSingle() as any);
-
-    let error;
-    if (existing) {
-      const result = await (supabase
-        .from("profiles" as any)
-        .update(profile)
-        .eq("user_id", userId) as any);
-      error = result.error;
-    } else {
-      const result = await (supabase
-        .from("profiles" as any)
-        .insert({ ...profile, user_id: userId }) as any);
-      error = result.error;
-    }
-
-    setSaving(false);
-    if (error) {
-      toast({
-        title: "Error saving profile",
-        description: error.message,
-        variant: "destructive",
-      });
-    } else {
-      toast({
-        title: "Profile updated!",
-        description: "Your information will be auto-filled in forms.",
-      });
-    }
+  const handleSave = () => {
+    saveProfile(profile);
+    toast({
+      title: "Profile saved!",
+      description: "Your information will be auto-filled in forms.",
+    });
   };
-
-  if (loading) {
-    return (
-      <AppLayout>
-        <div className="container mx-auto px-4 py-8 max-w-2xl">
-          <Card>
-            <CardHeader>
-              <Skeleton className="h-8 w-48" />
-              <Skeleton className="h-4 w-64" />
-            </CardHeader>
-            <CardContent className="space-y-6">
-              {[1, 2, 3, 4].map((i) => (
-                <div key={i} className="space-y-2">
-                  <Skeleton className="h-4 w-24" />
-                  <Skeleton className="h-10 w-full" />
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        </div>
-      </AppLayout>
-    );
-  }
 
   return (
     <AppLayout>
@@ -143,7 +45,7 @@ export default function Profile() {
               <Input
                 id="fullName"
                 value={profile.full_name}
-                onChange={(e) => setProfile({ ...profile, full_name: e.target.value })}
+                onChange={(e) => handleChange("full_name", e.target.value)}
                 placeholder="Enter your full name"
               />
             </div>
@@ -153,7 +55,7 @@ export default function Profile() {
               <Input
                 id="employeeId"
                 value={profile.employee_id}
-                onChange={(e) => setProfile({ ...profile, employee_id: e.target.value })}
+                onChange={(e) => handleChange("employee_id", e.target.value)}
                 placeholder="e.g., 057"
               />
             </div>
@@ -163,7 +65,7 @@ export default function Profile() {
               <Input
                 id="designation"
                 value={profile.designation}
-                onChange={(e) => setProfile({ ...profile, designation: e.target.value })}
+                onChange={(e) => handleChange("designation", e.target.value)}
                 placeholder="e.g., Junior Software Engineer"
               />
             </div>
@@ -173,22 +75,17 @@ export default function Profile() {
               <Input
                 id="mobileNumber"
                 value={profile.mobile_number}
-                onChange={(e) => setProfile({ ...profile, mobile_number: e.target.value })}
+                onChange={(e) => handleChange("mobile_number", e.target.value)}
                 placeholder="e.g., 01XXXXXXXXX"
               />
             </div>
 
             <Button 
               onClick={handleSave} 
-              disabled={saving}
               className="w-full bg-tiller-green hover:bg-tiller-green/90"
             >
-              {saving ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Save className="mr-2 h-4 w-4" />
-              )}
-              {saving ? "Saving..." : "Save Profile"}
+              <Save className="mr-2 h-4 w-4" />
+              Save Profile
             </Button>
           </CardContent>
         </Card>
